@@ -55,6 +55,7 @@ function setupKicks(client) {
                 return;
             }
 
+            // DM the user about their kick
             if(targetUser) {
                 const reasonDM = new EmbedBuilder()
                     .setTitle(`👢 You have been kicked from ${interaction.guild.name}`)
