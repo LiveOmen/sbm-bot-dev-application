@@ -110,7 +110,6 @@ function setupBans(client) {
                                 ? `${targetUser} \`(${targetId})\``
                                 : `\`ID: ${targetId}\``,
                         },
-                        { name: 'Banned By', value: `${interaction.user} \`(${interaction.user.id})\`` },
                         { name: 'Reason', value: reason }
                     )
                     .setTimestamp()
