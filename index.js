@@ -28,6 +28,10 @@ setupAutomod(client);
 const setupBans = require('./automod/bans.js');
 setupBans(client);
 
+// hook up kick handler 
+const setupKicks = require('./automod/kicks.js');
+setupKicks(client);
+
 // login
 const token = process.env.TOKEN;
 if (!token) {
