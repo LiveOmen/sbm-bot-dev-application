@@ -1,12 +1,52 @@
 // src/automod/automod.js
+require('dotenv').config();
+const fs = require('fs');
+const path = require('path');
 const { EmbedBuilder } = require('discord.js');
 
+// Path to the JSON file that stores banned words
+const BANNED_WORDS_PATH = path.join(__dirname, 'moderation', 'bannedwords.json');
+
+// Roles allowed to manage automod (/automod add/remove/list)
+// Recommended admin only (for obvious reasons)
+const MOD_ROLE_IDS = [
+    '1438933975115759798',
+];
+
+// Loads banned words from JSON file
+function loadBannedWords() {
+    try {
+        const raw = fs.readFileSync(BANNED_WORDS_PATH, 'utf8');
+        const arr = JSON.parse(raw);
+        if (Array.isArray(arr)) {
+            return arr.map(w => String(w).toLowerCase());
+        }
+    } catch (err) {
+        console.warn('bannedwords.json not found or invalid, starting with empty list');
+    }
+    return [];
+}
+
+// Saves banned words to JSON file
+function saveBannedWords(words) {
+    try {
+        fs.writeFileSync(BANNED_WORDS_PATH, JSON.stringify(words, null, 2), 'utf8');
+    } catch (err) {
+        console.error('Failed to save banned words:', err);
+    }
+}
+
+// Initialize in-memory list
+let bannedWords = loadBannedWords();
+
+// Check if user has mod role to manage automod
+function hasModRole(interaction) {
+    const member = interaction.member;
+    if (!member || !member.roles) return false;
+    return MOD_ROLE_IDS.some(roleId => member.roles.cache.has(roleId));
+}
+
 function setupAutomod(client) {
-    const bannedWords = [
-        'fag','nigga','nigger','faggot','dyke','cunt',
-        'chink','beaner','nazi','retard','coon',
-        'negro','tranny','jiggaboo',
-    ].map(w => w.toLowerCase());
 
     const exemptRoleId = '1438667765085896805';
     const logsChannel  = '1438664809200750703';
@@ -114,7 +154,133 @@ function setupAutomod(client) {
             console.error('Error in automod handler:', err);
         }
     });
+
+    // =============== /automod COMMAND HANDLER ===============
+    client.on('interactionCreate', async (interaction) => {
+        if (!interaction.isChatInputCommand()) return;
+        if (interaction.commandName !== 'automod') return;
+
+        // perms check
+        if (!hasModRole(interaction)) {
+            return interaction.reply({
+                content: '❌ You do not have permission to manage automod.',
+                ephemeral: true,
+            });
+        }
+
+        const sub = interaction.options.getSubcommand();
+
+        // /automod add
+        if (sub === 'add') {
+            const w1 = interaction.options.getString('word1');
+            const w2 = interaction.options.getString('word2');
+            const w3 = interaction.options.getString('word3');
+
+            const rawWords = [w1, w2, w3].filter(Boolean);
+            if (rawWords.length === 0) {
+                return interaction.reply({
+                    content: '❌ You must specify at least one word to add.',
+                    ephemeral: true,
+                });
+            }
+
+            const toAdd = rawWords
+                .map(w => w.trim().toLowerCase())
+                .filter(w => w.length > 0);
+
+            if (toAdd.length === 0) {
+                return interaction.reply({
+                    content: '❌ No valid words provided.',
+                    ephemeral: true,
+                });
+            }
+
+            let added = [];
+            for (const w of toAdd) {
+                if (!bannedWords.includes(w)) {
+                    bannedWords.push(w);
+                    added.push(w);
+                }
+            }
+
+            if (added.length > 0) {
+                saveBannedWords(bannedWords);
+            }
+
+            return interaction.reply({
+                content: added.length > 0
+                    ? `✅ Added to automod list: \`${added.join('`, `')}\``
+                    : 'ℹ️ All provided words were already in the automod list.',
+                ephemeral: true,
+            });
+        }
+
+        // /automod remove
+        if (sub === 'remove') {
+            const w1 = interaction.options.getString('word1');
+            const w2 = interaction.options.getString('word2');
+            const w3 = interaction.options.getString('word3');
+
+            const rawWords = [w1, w2, w3].filter(Boolean);
+            if (rawWords.length === 0) {
+                return interaction.reply({
+                    content: '❌ You must specify at least one word to remove.',
+                    ephemeral: true,
+                });
+            }
+
+            const toRemove = rawWords
+                .map(w => w.trim().toLowerCase())
+                .filter(w => w.length > 0);
+
+            if (toRemove.length === 0) {
+                return interaction.reply({
+                    content: '❌ No valid words provided.',
+                    ephemeral: true,
+                });
+            }
+
+            const beforeCount = bannedWords.length;
+            bannedWords = bannedWords.filter(w => !toRemove.includes(w));
+            const removedCount = beforeCount - bannedWords.length;
+
+            if (removedCount > 0) {
+                saveBannedWords(bannedWords);
+            }
+
+            return interaction.reply({
+                content: removedCount > 0
+                    ? `✅ Removed ${removedCount} word(s) from the automod list.`
+                    : 'ℹ️ None of the provided words were in the automod list.',
+                ephemeral: true,
+            });
+        }
+
+        // /automod list
+        if (sub === 'list') {
+            if (bannedWords.length === 0) {
+                return interaction.reply({
+                    content: 'ℹ️ The automod banned words list is currently empty.',
+                    ephemeral: true,
+                });
+            }
+
+            // Chunk if super long; for now simple join
+            const sorted = [...bannedWords].sort();
+            const display = sorted.join(', ');
+
+            const listEmbed = new EmbedBuilder()
+                .setTitle('🛡️ Automod Banned Words')
+                .setDescription(display.length > 4000 ? display.slice(0, 3970) + '…' : display)
+                .setColor('#d13838')
+                .setTimestamp();
+
+            return interaction.reply({
+                embeds: [listEmbed],
+                ephemeral: true,
+            });
+        }
+    });
 }
 
-// 👇 IMPORTANT: export the setup function
 module.exports = setupAutomod;
